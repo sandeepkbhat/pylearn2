@@ -103,7 +103,6 @@ class SVHN(dense_design_matrix.DenseDesignMatrixPyTables):
         view_converter = dense_design_matrix.DefaultViewConverter((32, 32, 3),
                                                                   axes)
         super(SVHN, self).__init__(X=data.X, y=data.y,
-                                   y_labels=numpy.max(data.y) + 1,
                                    view_converter=view_converter)
 
         if preprocessor:
@@ -142,7 +141,7 @@ class SVHN(dense_design_matrix.DenseDesignMatrixPyTables):
         rng = make_np_rng(None, 322, which_method="shuffle")
 
         def design_matrix_view(data_x):
-            """reshape data_x to deisng matrix view
+            """reshape data_x to design matrix view
             """
             data_x = numpy.transpose(data_x, axes=[3, 2, 0, 1])
             data_x = data_x.reshape((data_x.shape[0], 32 * 32 * 3))
@@ -235,8 +234,8 @@ class SVHN(dense_design_matrix.DenseDesignMatrixPyTables):
             train_x = numpy.cast[config.floatX](train_x)
             valid_x = numpy.cast[config.floatX](valid_x)
 
-            return design_matrix_view(train_x), train_y,\
-                design_matrix_view(valid_x), valid_y
+            return (design_matrix_view(train_x), train_y),\
+                (design_matrix_view(valid_x), valid_y)
 
         # The original splits
         if which_set in ['train', 'test']:
