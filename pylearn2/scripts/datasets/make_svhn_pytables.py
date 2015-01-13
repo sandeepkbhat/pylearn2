@@ -27,14 +27,8 @@ print """
       """
 
 test = SVHN('test', path=local_path+'/')
-check_dtype(test)
 
 valid = SVHN('valid', path=local_path)
-check_dtype(valid)
 
 train = SVHN('splitted_train', path=local_path)
-check_dtype(train)
-
-
-
 
