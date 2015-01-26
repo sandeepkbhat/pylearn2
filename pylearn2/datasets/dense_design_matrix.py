@@ -1113,9 +1113,9 @@ class DenseDesignMatrixPyTables(DenseDesignMatrix):
         length number examples. The remaining dimensions are xamples with
         topological significance, e.g. for images the remaining axes are rows,
         columns, and channels.
-    y : ndarray, 1-dimensional(?), optional
-        Labels or targets for each example. The semantics here are not quite
-        nailed down for this yet.
+    y : ndarray, optional
+        Labels or targets for each example. The semantics are similar to the
+        y argument used in DenseDesignMatrix.
     view_converter : object, optional
         An object for converting between design matrices and topological views.
         Currently DefaultViewConverter is the only type available but later we
@@ -1126,6 +1126,11 @@ class DenseDesignMatrixPyTables(DenseDesignMatrix):
     rng : object, optional
         A random number generator used for picking random indices into the
         design matrix when choosing minibatches.
+    y_labels : int, optional
+        If y contains labels then y_labels must be passed to indicate the
+        total number of possible labels e.g. 10 for the SVHN dataset
+        where the targets are numbers. This will make the set use
+        IndexSpace.
     """
 
     _default_seed = (17, 2, 946)
@@ -1136,14 +1141,16 @@ class DenseDesignMatrixPyTables(DenseDesignMatrix):
                  y=None,
                  view_converter=None,
                  axes=('b', 0, 1, 'c'),
-                 rng=_default_seed):
+                 rng=_default_seed,
+                 y_labels=None):
         super_self = super(DenseDesignMatrixPyTables, self)
         super_self.__init__(X=X,
                             topo_view=topo_view,
                             y=y,
                             view_converter=view_converter,
                             axes=axes,
-                            rng=rng)
+                            rng=rng,
+                            y_labels=y_labels)
         ensure_tables()
         if not hasattr(self, 'filters'):
             self.filters = tables.Filters(complib='blosc', complevel=5)
@@ -1194,7 +1201,7 @@ class DenseDesignMatrixPyTables(DenseDesignMatrix):
                                             data_x=X,
                                             start=start)
 
-    def init_hdf5(self, path, shapes):
+    def init_hdf5(self, path, shapes, title="Pytables Dataset"):
         """
         Initializes the hdf5 file into which the data will be stored. This must
         be called before calling fill_hdf5.
@@ -1205,12 +1212,15 @@ class DenseDesignMatrixPyTables(DenseDesignMatrix):
             The name of the hdf5 file.
         shapes : tuple
             The shapes of X and y.
+        title : string, optional
+            Name of the dataset. e.g. For SVHN, set this to "SVHN Dataset".
+            "Pytables Dataset" is used as title, by default.
         """
 
         x_shape, y_shape = shapes
         # make pytables
         ensure_tables()
-        h5file = tables.openFile(path, mode="w", title="SVHN Dataset")
+        h5file = tables.openFile(path, mode="w", title=title)
         gcolumns = h5file.createGroup(h5file.root, "Data", "Data")
         atom = (tables.Float32Atom() if config.floatX == 'float32'
                 else tables.Float64Atom())

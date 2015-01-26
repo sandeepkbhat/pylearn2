@@ -89,7 +89,8 @@ class SVHN(dense_design_matrix.DenseDesignMatrixPyTables):
         data = self.h5file.getNode('/', "Data")
 
         if start is not None or stop is not None:
-            self.filters = tables.Filters(complib='blosc', complevel=5)
+            if not hasattr(self, 'filters'):
+                self.filters = tables.Filters(complib='blosc', complevel=5)
             self.h5file, data = self.resize(self.h5file, start, stop)
 
         # rescale or center if permitted
@@ -135,9 +136,13 @@ class SVHN(dense_design_matrix.DenseDesignMatrixPyTables):
                  'train_all': 604388, 'valid': 6000, 'splitted_train': 598388}
         image_size = 32 * 32 * 3
         h_file_n = "{0}_32x32.h5".format(os.path.join(path, "h5", which_set))
+        # The table size for y is being set to [sizes[which_set], 1] since y
+        # contains the labels. If you are using the old one-hot scheme then this
+        # needs to be set to 10.
         h5file, node = self.init_hdf5(h_file_n,
                                       ([sizes[which_set], image_size],
-                                       [sizes[which_set], 10]))
+                                       [sizes[which_set], 1]),
+                                      title="SVHN Dataset")
 
         # For consistency between experiments better to make new random stream
         rng = make_np_rng(None, 322, which_method="shuffle")
@@ -154,7 +159,9 @@ class SVHN(dense_design_matrix.DenseDesignMatrixPyTables):
 
             data = load(path)
             data_x = numpy.cast[config.floatX](data['X'])
-            data_y = data['y']
+            # .mat labels for SVHN are in range [1,10]
+            # So subtract 1 to map labels to range [0,9]
+            data_y = data['y'] - 1
             del data
             gc.collect()
             return design_matrix_view(data_x), data_y
