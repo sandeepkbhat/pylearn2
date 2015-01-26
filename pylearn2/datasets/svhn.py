@@ -142,7 +142,8 @@ class SVHN(dense_design_matrix.DenseDesignMatrixPyTables):
         h5file, node = self.init_hdf5(h_file_n,
                                       ([sizes[which_set], image_size],
                                        [sizes[which_set], 1]),
-                                      title="SVHN Dataset")
+                                      title="SVHN Dataset",
+                                      y_dtype='int')
 
         # For consistency between experiments better to make new random stream
         rng = make_np_rng(None, 322, which_method="shuffle")

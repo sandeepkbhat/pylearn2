@@ -1201,7 +1201,9 @@ class DenseDesignMatrixPyTables(DenseDesignMatrix):
                                             data_x=X,
                                             start=start)
 
-    def init_hdf5(self, path, shapes, title="Pytables Dataset"):
+    def init_hdf5(self, path, shapes,
+                  title="Pytables Dataset",
+                  y_dtype='float'):
         """
         Initializes the hdf5 file into which the data will be stored. This must
         be called before calling fill_hdf5.
@@ -1215,6 +1217,9 @@ class DenseDesignMatrixPyTables(DenseDesignMatrix):
         title : string, optional
             Name of the dataset. e.g. For SVHN, set this to "SVHN Dataset".
             "Pytables Dataset" is used as title, by default.
+        y_dtype : string, optional
+            Either 'float' or 'int'. Decides the type of pytables atom
+            used to store the y data. By default 'float' type is used.
         """
 
         x_shape, y_shape = shapes
@@ -1226,6 +1231,10 @@ class DenseDesignMatrixPyTables(DenseDesignMatrix):
                 else tables.Float64Atom())
         h5file.createCArray(gcolumns, 'X', atom=atom, shape=x_shape,
                             title="Data values", filters=self.filters)
+        if y_dtype != 'float':
+            # For 1D ndarray of int labels, override the atom to integer
+            atom = (tables.Int32Atom() if config.floatX == 'float32'
+                    else tables.Int64Atom())
         h5file.createCArray(gcolumns, 'y', atom=atom, shape=y_shape,
                             title="Data targets", filters=self.filters)
         return h5file, gcolumns
@@ -1310,6 +1319,10 @@ class DenseDesignMatrixPyTables(DenseDesignMatrix):
                                 shape=((stop - start, data.X.shape[1])),
                                 title="Data values",
                                 filters=self.filters)
+        if np.issubdtype(data.y, int):
+            # For 1D ndarray of int labels, override the atom to integer
+            atom = (tables.Int32Atom() if config.floatX == 'float32'
+                    else tables.Int64Atom())
         y = h5file.createCArray(gcolumns,
                                 'y',
                                 atom=atom,
