@@ -89,6 +89,7 @@ class SVHN(dense_design_matrix.DenseDesignMatrixPyTables):
         data = self.h5file.getNode('/', "Data")
 
         if start is not None or stop is not None:
+            self.filters = tables.Filters(complib='blosc', complevel=5)
             self.h5file, data = self.resize(self.h5file, start, stop)
 
         # rescale or center if permitted
@@ -103,6 +104,7 @@ class SVHN(dense_design_matrix.DenseDesignMatrixPyTables):
         view_converter = dense_design_matrix.DefaultViewConverter((32, 32, 3),
                                                                   axes)
         super(SVHN, self).__init__(X=data.X, y=data.y,
+                                   y_labels=numpy.max(data.y) + 1,
                                    view_converter=view_converter)
 
         if preprocessor:
