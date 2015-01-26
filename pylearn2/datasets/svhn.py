@@ -159,9 +159,7 @@ class SVHN(dense_design_matrix.DenseDesignMatrixPyTables):
 
             data = load(path)
             data_x = numpy.cast[config.floatX](data['X'])
-            # .mat labels for SVHN are in range [1,10]
-            # So subtract 1 to map labels to range [0,9]
-            data_y = data['y'] - 1
+            data_y = data['y']
             del data
             gc.collect()
             return design_matrix_view(data_x), data_y
@@ -276,6 +274,11 @@ class SVHN(dense_design_matrix.DenseDesignMatrixPyTables):
 
         assert data_x.shape[0] == sizes[which_set]
         assert data_y.shape[0] == sizes[which_set]
+
+        # .mat labels for SVHN are in range [1,10]
+        # So subtract 1 to map labels to range [0,9]
+        # This is consistent with MNIST dataset
+        data_y = data_y - 1
 
         SVHN.fill_hdf5(h5file, data_x, data_y, node)
         h5file.close()
