@@ -26,6 +26,7 @@ from pylearn2.utils import safe_izip, wraps
 from pylearn2.utils.data_specs import is_flat_specs
 from pylearn2.utils.exc import reraise_as
 from pylearn2.utils.rng import make_np_rng
+import copy
 
 # Make sure that the docstring uses restructured text list format.
 # If you change the module-level docstring, please re-run
@@ -328,6 +329,11 @@ class ForcedEvenIterator(SubsetIterator):
 
     def __next__(self):
         return self.next()
+
+    @property
+    @wraps(SubsetIterator.uneven, assigned=(), updated=())
+    def uneven(self):
+        return False
 
 
 def as_even(iterator_cls):
@@ -639,6 +645,125 @@ class BatchwiseShuffledSequentialIterator(SequentialSubsetIterator):
     uniform_batch_size = False
 
 
+class EvenSequencesSubsetIterator(SubsetIterator):
+    """
+    An iterator for datasets with sequential data (e.g. list of words)
+    which returns a list of indices of sequences in the dataset which have
+    the same length.
+    Within one minibatch all sequences will have the same length, so it
+    might return minibatches with different sizes depending on the
+    distribution of the lengths of sequences in the data.
+
+    Notes
+    -----
+    Returns lists of indices (`fancy = True`).
+
+    Parameters
+    ----------
+    sequence_data : list of lists or ndarray of objects (ndarrays)
+        The sequential data used to determine indices within the dataset such
+        that within a minibatch all sequences will have same lengths.
+
+    See :py:class:`SubsetIterator` for detailed constructor parameter
+    and attribute documentation.
+    """
+
+    def __init__(self, sequence_data, batch_size, num_batches=None, rng=None):
+        self._rng = make_np_rng(rng, which_method=["random_integers",
+                                                   "shuffle"])
+
+        if batch_size is None:
+            raise ValueError("batch_size cannot be None for random uniform "
+                             "iteration")
+        if num_batches is not None:
+            raise ValueError("EvenSequencesSubsetIterator doesn't support"
+                             " fixed number of batches")
+        if isinstance(sequence_data, list):
+            self._dataset_size = len(sequence_data)
+        elif isinstance(sequence_data, np.ndarray):
+            self._dataset_size = sequence_data.shape[0]
+        else:
+            raise ValueError("sequence_data must be of type list or"
+                             " ndarray")
+        self._sequence_data = sequence_data
+        self._batch_size = batch_size
+        self.prepare()
+        self.reset()
+
+    def prepare(self):
+        # find unique lengths in sequences
+        self.lengths = [len(s) for s in self._sequence_data]
+        self.len_unique = np.unique(self.lengths)
+
+        # store the indices of sequences for each unique length,
+        # and their counts
+        self.len_indices = dict()
+        self.len_counts = dict()
+        for ll in self.len_unique:
+            self.len_indices[ll] = np.where(self.lengths == ll)[0]
+            self.len_counts[ll] = len(self.len_indices[ll])
+
+    def reset(self):
+        # make a copy of the number of sequences that share a specific length
+        self.len_curr_counts = copy.copy(self.len_counts)
+        # permute the array of unique lengths every epoch
+        self.len_unique = self._rng.permutation(self.len_unique)
+        self.len_indices_pos = dict()
+        # save current total counts to decide when to stop iteration
+        self.total_curr_counts = 0
+        for ll in self.len_unique:
+            # keep a pointer to where we should start picking our minibatch of
+            # same length sequences
+            self.len_indices_pos[ll] = 0
+            # permute the array of indices of sequences with specific lengths
+            # every epoch
+            self.len_indices[ll] = self._rng.permutation(self.len_indices[ll])
+            self.total_curr_counts += len(self.len_indices[ll])
+        self.len_idx = -1
+
+    @wraps(SubsetIterator.next)
+    def next(self):
+        # stop when there are no more sequences left
+        if self.total_curr_counts == 0:
+            self.reset()
+            raise StopIteration()
+
+        # pick a length from the permuted array of lengths
+        while True:
+            self.len_idx = np.mod(self.len_idx+1, len(self.len_unique))
+            curr_len = self.len_unique[self.len_idx]
+            if self.len_curr_counts[curr_len] > 0:
+                break
+
+        # find the position and the size of the minibatch of sequences
+        # to be returned
+        curr_batch_size = np.minimum(self._batch_size,
+                                     self.len_curr_counts[curr_len])
+        curr_pos = self.len_indices_pos[curr_len]
+
+        # get the actual indices for the sequences
+        curr_indices = self.len_indices[curr_len][curr_pos:curr_pos +
+                                                  curr_batch_size]
+
+        # update the pointer and counts of sequences in the chosen length
+        self.len_indices_pos[curr_len] += curr_batch_size
+        self.len_curr_counts[curr_len] -= curr_batch_size
+        self.total_curr_counts -= curr_batch_size
+        return curr_indices
+
+    def __next__(self):
+        return self.next()
+
+    @property
+    @wraps(SubsetIterator.num_examples, assigned=(), updated=())
+    def num_examples(self):
+        return len(self._sequence_data)
+
+    fancy = True
+    stochastic = True
+    uniform_batch_size = False
+
+
 _iteration_schemes = {
     'sequential': SequentialSubsetIterator,
     'shuffled_sequential': ShuffledSequentialSubsetIterator,
@@ -649,6 +774,7 @@ _iteration_schemes = {
     'even_shuffled_sequential': as_even(ShuffledSequentialSubsetIterator),
     'even_batchwise_shuffled_sequential':
     as_even(BatchwiseShuffledSequentialIterator),
+    'even_sequences': EvenSequencesSubsetIterator,
 }
 
 
@@ -738,7 +864,7 @@ class FiniteDatasetIterator(object):
     The dataset should provide a `get` method which accepts a tuple of source
     identifiers and a list or slice of indexes and returns a tuple of batches
     of examples, one for each source. The old interface using `get_data` is
-    deprecated and will become unsupported as of July 28, 2015.
+    still supported for the moment being.
     """
 
     def __init__(self, dataset, subset_iterator, data_specs=None,
@@ -759,7 +885,7 @@ class FiniteDatasetIterator(object):
         # or a pair of (non-nested CompositeSpace, non-nested tuple).
         # We could build a mapping and call flatten(..., return_tuple=True)
         # but simply putting spaces, sources and data in tuples is simpler.
-        if not isinstance(dataset_source, tuple):
+        if not isinstance(dataset_source, (tuple, list)):
             dataset_source = (dataset_source,)
 
         if not isinstance(dataset_space, CompositeSpace):
@@ -780,11 +906,6 @@ class FiniteDatasetIterator(object):
         # If `dataset` is incompatible with the new interface, fall back to the
         # old interface
         if not hasattr(self._dataset, 'get'):
-            warnings.warn("dataset is using the old iterator interface which "
-                          "is deprecated and will become officially "
-                          "unsupported as of July 28, 2015. The dataset "
-                          "should implement a `get` method respecting the new "
-                          "interface.")
             all_data = self._dataset.get_data()
             if not isinstance(all_data, tuple):
                 all_data = (all_data,)
@@ -816,25 +937,19 @@ class FiniteDatasetIterator(object):
                 reraise_as(ValueError(msg))
             dspace = dataset_sub_spaces[idx]
 
-            init_fn = self._convert[i]
-            fn = init_fn
+            fn = self._convert[i]
 
-            # If there is an init_fn, it is supposed to take
-            # care of the formatting, and it should be an error
-            # if it does not. If there was no init_fn, then
-            # the iterator will try to format using the generic
+            # If there is a fn, it is supposed to take care of the formatting,
+            # and it should be an error if it does not. If there was no fn,
+            # then the iterator will try to format using the generic
             # space-formatting functions.
-            if init_fn is None:
+            if fn is None:
                 # "dspace" and "sp" have to be passed as parameters
                 # to lambda, in order to capture their current value,
                 # otherwise they would change in the next iteration
                 # of the loop.
-                if fn is None:
-                    fn = (lambda batch, dspace=dspace, sp=sp:
-                          dspace.np_format_as(batch, sp))
-                else:
-                    fn = (lambda batch, dspace=dspace, sp=sp, fn_=fn:
-                          dspace.np_format_as(fn_(batch), sp))
+                fn = (lambda batch, dspace=dspace, sp=sp:
+                      dspace.np_format_as(batch, sp))
 
             self._convert[i] = fn
 

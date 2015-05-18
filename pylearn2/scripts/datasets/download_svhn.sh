@@ -27,3 +27,4 @@ $DL_CMD http://ufldl.stanford.edu/housenumbers/train_32x32.mat
 $DL_CMD http://ufldl.stanford.edu/housenumbers/test_32x32.mat
 $DL_CMD http://ufldl.stanford.edu/housenumbers/extra_32x32.mat
 popd > /dev/null
+echo "Downloading Completed. Note: The dataset is for non-commercial use only"

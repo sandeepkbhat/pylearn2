@@ -269,8 +269,8 @@ class DenseDesignMatrix(Dataset):
                  rng=None, data_specs=None,
                  return_tuple=False):
 
-        if data_specs is None:
-            data_specs = self._iter_data_specs
+        [mode, batch_size, num_batches, rng, data_specs] = self._init_iterator(
+            mode, batch_size, num_batches, rng, data_specs)
 
         # If there is a view_converter, we have to use it to convert
         # the stored data for "features" into one that the iterator
@@ -287,32 +287,15 @@ class DenseDesignMatrix(Dataset):
         for sp, src in safe_zip(sub_spaces, sub_sources):
             if src == 'features' and \
                getattr(self, 'view_converter', None) is not None:
-                conv_fn = (lambda batch, self=self, space=sp:
-                           self.view_converter.get_formatted_batch(batch,
-                                                                   space))
+                conv_fn = (
+                    lambda batch, self=self, space=sp:
+                    self.view_converter.get_formatted_batch(batch, space))
             else:
                 conv_fn = None
-
             convert.append(conv_fn)
 
-        # TODO: Refactor
-        if mode is None:
-            if hasattr(self, '_iter_subset_class'):
-                mode = self._iter_subset_class
-            else:
-                raise ValueError('iteration mode not provided and no default '
-                                 'mode set for %s' % str(self))
-        else:
-            mode = resolve_iterator_class(mode)
-
-        if batch_size is None:
-            batch_size = getattr(self, '_iter_batch_size', None)
-        if num_batches is None:
-            num_batches = getattr(self, '_iter_num_batches', None)
-        if rng is None and mode.stochastic:
-            rng = self.rng
         return FiniteDatasetIterator(self,
-                                     mode(self.X.shape[0],
+                                     mode(self.get_num_examples(),
                                           batch_size,
                                           num_batches,
                                           rng),
@@ -338,7 +321,7 @@ class DenseDesignMatrix(Dataset):
 
     def use_design_loc(self, path):
         """
-        Caling this function changes the serialization behavior of the object
+        Calling this function changes the serialization behavior of the object
         permanently.
 
         If this function has been called, when the object is serialized, it
@@ -849,21 +832,6 @@ class DenseDesignMatrix(Dataset):
         """
         return self.y
 
-    @property
-    def num_examples(self):
-        """
-        .. todo::
-
-            WRITEME
-        """
-
-        warnings.warn("num_examples() is being deprecated, and will be "
-                      "removed around November 7th, 2014. `get_num_examples` "
-                      "should be used instead.",
-                      stacklevel=2)
-
-        return self.get_num_examples()
-
     def get_batch_design(self, batch_size, include_labels=False):
         """
         .. todo::
@@ -1126,9 +1094,14 @@ class DenseDesignMatrixPyTables(DenseDesignMatrix):
     rng : object, optional
         A random number generator used for picking random indices into the
         design matrix when choosing minibatches.
+    X_labels : int, optional
+        If X contains labels then X_labels must be passed to indicate the
+        total number of possible labels e.g. the size of a the vocabulary
+        when X contains word indices. This will make the set use
+        IndexSpace.
     y_labels : int, optional
         If y contains labels then y_labels must be passed to indicate the
-        total number of possible labels e.g. 10 for the SVHN dataset
+        total number of possible labels e.g. 10 for the MNIST dataset
         where the targets are numbers. This will make the set use
         IndexSpace.
     """
@@ -1142,6 +1115,7 @@ class DenseDesignMatrixPyTables(DenseDesignMatrix):
                  view_converter=None,
                  axes=('b', 0, 1, 'c'),
                  rng=_default_seed,
+                 X_labels=None,
                  y_labels=None):
         super_self = super(DenseDesignMatrixPyTables, self)
         super_self.__init__(X=X,
@@ -1150,10 +1124,23 @@ class DenseDesignMatrixPyTables(DenseDesignMatrix):
                             view_converter=view_converter,
                             axes=axes,
                             rng=rng,
+                            X_labels=X_labels,
                             y_labels=y_labels)
+        self._check_labels()
         ensure_tables()
         if not hasattr(self, 'filters'):
             self.filters = tables.Filters(complib='blosc', complevel=5)
+
+    def _check_labels(self):
+        """Sanity checks for X_labels and y_labels."""
+        if self.X_labels is not None:
+            assert self.X is not None
+            assert self.view_converter is None
+            assert self.X.ndim <= 2
+
+        if self.y_labels is not None:
+            assert self.y is not None
+            assert self.y.ndim <= 2
 
     def set_design_matrix(self, X, start=0):
         """
