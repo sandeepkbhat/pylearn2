@@ -8,6 +8,8 @@ import os
 from pylearn2.datasets.svhn import SVHN
 from pylearn2.utils.string_utils import preprocess
 
+assert 'PYLEARN2_DATA_PATH' in os.environ, "PYLEARN2_DATA_PATH not defined"
+
 orig_path = preprocess('${PYLEARN2_DATA_PATH}/SVHN/format2/')
 
 # Check if MAT files have been downloaded
